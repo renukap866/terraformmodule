@@ -1,0 +1,100 @@
+trigger:
+  branches:
+    include:
+      - master
+      
+variables:
+  TF_IN_AUTOMATION: true
+  TF_WORK_DIR: '$(Pipeline.Workspace)/terraform-tmp'
+
+pool:
+  name: default  # Replace with your private agent pool name
+
+stages:
+# ---------------------- Stage 1: Validate & Plan ----------------------
+- stage: ValidateAndPlan
+  displayName: "Terraform Validate & Plan"
+  jobs:
+    - job: TerraformPlan
+      displayName: "Validate and Plan"
+      steps:
+        - checkout: self
+
+        - task: TerraformInstaller@1
+          displayName: 'Install Terraform'
+          inputs:
+            terraformVersion: 'latest'
+
+        - powershell: |
+            New-Item -Path "$(TF_WORK_DIR)" -ItemType Directory -Force
+            Copy-Item -Path "$(System.DefaultWorkingDirectory)\*" -Destination "$(TF_WORK_DIR)" -Recurse -Force
+          displayName: 'Copy TF files to temp folder'
+
+
+
+
+        - task: AzureCLI@2
+          displayName: 'Terraform Init, Validate, Plan'
+          inputs:
+            azureSubscription: 'terraformmodule'
+            scriptType: 'ps'
+            scriptLocation: 'inlineScript'
+            workingDirectory: '$(TF_WORK_DIR)'
+            inlineScript: |
+              terraform init -input=false -no-color -reconfigure
+              terraform validate
+              terraform plan -out=tfplan -no-color -var-file ./modules/ntt.tfvars
+              terraform show -no-color tfplan > plan-output.txt
+
+        - task: PublishPipelineArtifact@1
+          displayName: 'Publish Full TF Folder (with tfplan)'
+          inputs:
+            targetPath: '$(TF_WORK_DIR)'
+            artifact: terraform-artifact
+
+# ---------------------- Stage 2: Apply with Approval ----------------------
+- stage: Apply
+  displayName: "Terraform Apply"
+  dependsOn: ValidateAndPlan
+  condition: succeeded()
+  jobs:
+    - deployment: DeployTerraform
+      displayName: "Apply Terraform"
+      environment: test  # Manual approval must be enabled in Azure DevOps
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: DownloadPipelineArtifact@2
+                displayName: 'Download TF Artifact'
+                inputs:
+                  artifactName: terraform-artifact
+                  targetPath: '$(TF_WORK_DIR)'
+
+              - task: TerraformInstaller@1
+                displayName: 'Install Terraform'
+                inputs:
+                  terraformVersion: 'latest'
+
+              - task: AzureCLI@2
+                displayName: 'Terraform Apply'
+                inputs:
+                  azureSubscription: 'terraformmodule'
+                  scriptType: 'ps'
+                  scriptLocation: 'inlineScript'
+                  workingDirectory: '$(TF_WORK_DIR)'
+                  inlineScript: |
+                    terraform init -input=false -no-color -reconfigure
+                    terraform apply -auto-approve -var-file ./modules/ntt.tfvars
+                    
+                    
+
+
+                    
+                    
+
+                    
+
+
+
+                    
