@@ -33,8 +33,9 @@ storage_image_version = "latest"
 
 admin_username = "adminuser"
 admin_password = "P@ssw0rd1234!"
-data_disk_size_gb = 50
+data_disk_size_gb = 100
 nsg_name = "tango-nsg"
+
 
 
 
